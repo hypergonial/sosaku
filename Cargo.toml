@@ -4,7 +4,7 @@ members = ["sosaku", "sosaku-cli", "sosaku-py"]
 
 [workspace.package]
 authors = ["hypergonial"]
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
@@ -12,7 +12,7 @@ homepage = "https://github.com/hypergonial/sosaku"
 repository = "https://github.com/hypergonial/sosaku"
 
 [workspace.dependencies]
-sosaku = { version = "0.6.1", path = "sosaku" }
+sosaku = { version = "0.6.2", path = "sosaku" }
 indexmap = "2.14.0"
 
 [workspace.lints.rust]

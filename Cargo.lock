@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "base64",
  "indexmap",
@@ -494,7 +494,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "clap",
  "serde_json",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-py"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "indexmap",
  "pyo3",
