@@ -196,7 +196,11 @@ fn parse_non_keyword(input: &str) -> IResult<&str, &str> {
 pub(super) fn parse_variable_name(input: &str) -> IResult<&str, VarAccess> {
     let (input, names) = separated_list1(
         char('.'),
-        parse_non_keyword.and(opt(delimited(ws(char('[')), ws(digit1), ws(char(']'))))),
+        alt((parse_non_keyword.map(Cow::Borrowed), string)).and(opt(delimited(
+            ws(char('[')),
+            ws(digit1),
+            ws(char(']')),
+        ))),
     )
     .parse(input)?;
 
@@ -737,6 +741,21 @@ mod tests {
             Ok((
                 "",
                 Exp::and(Exp::varname("foo").unwrap(), Exp::varname("bar").unwrap())
+            ))
+        );
+    }
+
+    #[test]
+    fn test_escaped_variable_names() {
+        assert_eq!(
+            parse_exp("foo.'bar/baz'[1].qux[0]"),
+            Ok((
+                "",
+                Exp::Var(VarAccess::new(vec![
+                    VarName::new("foo", None),
+                    VarName::new("bar/baz", Some(1)),
+                    VarName::new("qux", Some(0)),
+                ]))
             ))
         );
     }
