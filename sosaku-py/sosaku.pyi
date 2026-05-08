@@ -47,7 +47,7 @@ class VarAccess:
             string of variable names and indices (e.g., "a.b[0].c").
         """
 
-    def access(self, value: JSONValue) -> JSONValue:
+    def access(self, value: JSONValue, /) -> JSONValue:
         """Use the accessor to access a value from the given JSON value.
 
         Parameters
@@ -61,7 +61,23 @@ class VarAccess:
             The accessed value.
         """
 
-    def access_bindings(self, bindings: typing.Mapping[str, JSONValue]) -> JSONValue:
+    def replace(self, value: JSONValue, replacement: JSONValue, /) -> JSONValue:
+        """Use the accessor to replace a value in the given JSON value with the replacement value.
+
+        Parameters
+        ----------
+        value : JSONValue
+            The JSON value to access and replace.
+        replacement : JSONValue
+            The value to replace the accessed value with.
+
+        Returns
+        -------
+        JSONValue
+            The old value that was replaced.
+        """
+
+    def access_bindings(self, bindings: typing.Mapping[str, JSONValue], /) -> JSONValue:
         """Use the accessor to access a value from the given bindings.
 
         Parameters

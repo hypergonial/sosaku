@@ -83,6 +83,34 @@ impl VarName {
         }
     }
 
+    fn access_mut<'a, V: JsonValue + Debug>(
+        &self,
+        value: &'a mut V,
+        resolve_obj_name: impl Fn() -> String,
+    ) -> Result<&'a mut V, VarAccessError> {
+        // Map into the object with the name
+        if let Some(o) = value.as_object_mut() {
+            let out = o
+                .get_mut(self.name())
+                .ok_or_else(|| VarAccessError::ObjectKeyError {
+                    object: resolve_obj_name(),
+                    key: self.name().to_string(),
+                })?;
+            // If we have an index, index into the array
+            if self.index().is_some() {
+                self.index_into_mut(out, resolve_obj_name)
+            } else {
+                Ok(out)
+            }
+        } else {
+            // Trying to varaccess into a non-object value is always an error
+            Err(VarAccessError::ObjectKeyError {
+                object: resolve_obj_name(),
+                key: self.name().to_string(),
+            })
+        }
+    }
+
     fn index_into<'a, V: JsonValue + Debug>(
         &self,
         value: &'a V,
@@ -103,6 +131,33 @@ impl VarName {
                         "Index out of bounds at '{}' (index: {index}, length: {})",
                         resolve_obj_name(),
                         arr.len()
+                    ),
+                })
+        } else {
+            panic!("Called index_into on VarName without an index")
+        }
+    }
+
+    fn index_into_mut<'a, V: JsonValue + Debug>(
+        &self,
+        value: &'a mut V,
+        resolve_obj_name: impl Fn() -> String,
+    ) -> Result<&'a mut V, VarAccessError> {
+        if let Some(index) = self.index() {
+            let arr = value
+                .as_array_mut()
+                .ok_or_else(|| VarAccessError::TypeError {
+                    message: format!("Expected array at '{}'", resolve_obj_name()),
+                })?;
+
+            let len = arr.len();
+
+            arr.get_mut(index)
+                .ok_or_else(|| VarAccessError::IndexOutOfBounds {
+                    message: format!(
+                        "Index out of bounds at '{}' (index: {index}, length: {})",
+                        resolve_obj_name(),
+                        len
                     ),
                 })
         } else {
@@ -153,6 +208,26 @@ impl VarAccess {
         &self.names
     }
 
+    /// Resolve the variable access until the `i`th name, returning a string
+    /// representation of the access path up to that point.
+    fn resolve_name_until(names: &[VarName], root: Option<&VarName>, i: usize) -> String {
+        if i == 0 {
+            #[expect(clippy::or_fun_call)]
+            root.unwrap_or(&VarName::new("<root>", None)).to_string()
+        } else {
+            let names = names[..i]
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+
+            if let Some(r) = root {
+                format!("{}.{}", r, names.join("."))
+            } else {
+                names.join(".")
+            }
+        }
+    }
+
     fn access_names<'a, V: JsonValue + Debug>(
         mut names: &[VarName],
         value: &'a V,
@@ -172,37 +247,58 @@ impl VarAccess {
             ((value, val), None)
         };
 
-        // Join the previous variable names to indicate the
-        // path to the current object being accessed, for better error messages
-        let resolve_name_until = |i: usize| {
-            if i == 0 {
-                #[expect(clippy::or_fun_call)]
-                root.unwrap_or(&VarName::new("<root>", None)).to_string()
-            } else {
-                let names = names[..i]
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>();
-
-                if let Some(r) = root {
-                    format!("{}.{}", r, names.join("."))
-                } else {
-                    names.join(".")
-                }
-            }
-        };
-
         // Reduce "current" by accessing each variable name in the access path
         for (i, var) in names.iter().enumerate() {
-            current = (var.access(current.0, || resolve_name_until(i))?, var);
+            current = (
+                var.access(current.0, || Self::resolve_name_until(names, root, i))?,
+                var,
+            );
         }
 
         // Account for edge-case where if ignore_first is true and the first variable name has an index,
         // we need to access that index in the root value
         if names.is_empty() && ignore_first && current.1.index().is_some() {
-            current.0 = current
-                .1
-                .index_into(current.0, || resolve_name_until(names.len()))?;
+            current.0 = current.1.index_into(current.0, || {
+                Self::resolve_name_until(names, root, names.len())
+            })?;
+        }
+
+        Ok(current.0)
+    }
+
+    fn access_names_mut<'a, V: JsonValue + Debug>(
+        mut names: &[VarName],
+        value: &'a mut V,
+        ignore_first: bool,
+    ) -> Result<&'a mut V, VarAccessError> {
+        // (curr_value, curr_name), root_name)
+        let (mut current, root) = if ignore_first {
+            let root = names
+                .first()
+                .expect("Variable access must have at least one name");
+            names = names.get(1..).ok_or(VarAccessError::EmptyAccess)?;
+            ((value, root), Some(root))
+        } else {
+            let val = names
+                .first()
+                .expect("Variable access must have at least one name");
+            ((value, val), None)
+        };
+
+        // Reduce "current" by accessing each variable name in the access path
+        for (i, var) in names.iter().enumerate() {
+            current = (
+                var.access_mut(current.0, || Self::resolve_name_until(names, root, i))?,
+                var,
+            );
+        }
+
+        // Account for edge-case where if ignore_first is true and the first variable name has an index,
+        // we need to access that index in the root value
+        if names.is_empty() && ignore_first && current.1.index().is_some() {
+            current.0 = current.1.index_into_mut(current.0, || {
+                Self::resolve_name_until(names, root, names.len())
+            })?;
         }
 
         Ok(current.0)
@@ -218,6 +314,35 @@ impl VarAccess {
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
     pub fn access<'a, V: JsonValue + Debug>(&self, value: &'a V) -> Result<&'a V, VarAccessError> {
         Self::access_names(&self.names, value, false)
+    }
+
+    /// Access the value denoted by this accessor from the given JSON value and return a mutable reference to it.
+    ///
+    /// # Returns
+    /// The value accessed from the provided JSON value according to
+    /// the variable access specified by this [`VarAccess`].
+    ///
+    /// # Errors
+    /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
+    pub fn access_mut<'a, V: JsonValue + Debug>(
+        &self,
+        value: &'a mut V,
+    ) -> Result<&'a mut V, VarAccessError> {
+        Self::access_names_mut(&self.names, value, false)
+    }
+
+    /// Replace the value denoted by this accessor in the given JSON value with the provided replacement value.
+    ///
+    /// # Errors
+    ///
+    /// If there was an error accessing the value to be replaced, such as a type mismatch or index out of bounds
+    pub fn replace<V: JsonValue + Debug>(
+        &self,
+        value: &mut V,
+        replacement: V,
+    ) -> Result<V, VarAccessError> {
+        let target = self.access_mut(value)?;
+        Ok(std::mem::replace(target, replacement))
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
@@ -245,6 +370,33 @@ impl VarAccess {
                 })?;
 
         Self::access_names(&self.names, value.as_ref(), true).map(Cow::Borrowed)
+    }
+
+    /// Access the value denoted by this accessor from the given JSON value and return a mutable reference to it.
+    ///
+    /// # Returns
+    /// The value accessed from the provided JSON value according to
+    /// the variable access specified by this [`VarAccess`].
+    ///
+    /// # Errors
+    /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
+    pub fn access_mut_from_bindings<'a, V: JsonValue + Debug + Clone>(
+        &self,
+        env: &'a mut Env<'a, '_, V>,
+    ) -> Result<Cow<'a, V>, VarAccessError> {
+        if self.names.is_empty() {
+            return Ok(Cow::Owned(V::null()));
+        }
+
+        let first_name = self.names[0].name();
+        let value = env.bindings_mut().get_mut(first_name).ok_or_else(|| {
+            VarAccessError::VariableNotFound {
+                variable: first_name.to_string(),
+            }
+        })?;
+
+        Self::access_names_mut(&self.names, value.to_mut(), true)
+            .map(|arg0: &mut V| Cow::Borrowed(&*arg0))
     }
 }
 
@@ -368,6 +520,19 @@ mod tests {
         let var_access = VarAccess::try_from("null_value").unwrap();
         let result = var_access.access(&*TEST_VALUE_2).unwrap();
         assert_eq!(*result, json!(null));
+    }
+
+    #[test]
+    fn test_var_replace() {
+        let mut value = TEST_VALUE_1.clone();
+        let var_access = VarAccess::try_from("foo.bar[0].baz").unwrap();
+        let old_value = var_access
+            .replace(&mut value, json!({"replacement": 100}))
+            .unwrap();
+        let var_access = VarAccess::try_from("foo.bar[0].baz.replacement").unwrap();
+        let result = var_access.access(&value).unwrap();
+        assert_eq!(old_value, json!(42));
+        assert_eq!(*result, json!(100));
     }
 
     #[test]

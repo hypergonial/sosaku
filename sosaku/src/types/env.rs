@@ -61,6 +61,18 @@ impl<'var, 'vtable, V: JsonValue + Clone + Debug> Env<'var, 'vtable, V> {
         &self.bindings
     }
 
+    /// Get a mutable reference to the variable bindings in this environment.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to the variable bindings, which is a `HashMap` mapping variable names
+    /// to their corresponding JSON values. Modifying this will change the variable bindings in this environment
+    /// and will affect any evaluations that use this environment after the modification.
+    #[inline]
+    pub const fn bindings_mut(&mut self) -> &mut HashMap<Box<str>, Cow<'var, V>> {
+        &mut self.bindings
+    }
+
     /// Get a reference to the active vtable.
     ///
     /// # Returns

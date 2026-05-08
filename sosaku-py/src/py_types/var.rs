@@ -55,6 +55,35 @@ impl PyVarAccess {
             .clone())
     }
 
+    /// Replace the variable specified by this `PyVarAccess` in the given JSON value with a new value.
+    ///
+    /// # Arguments
+    ///
+    /// - `value`: The JSON value in which to replace the variable specified by this `PyVarAccess`.
+    /// - `replacement`: The new value to replace the variable with.
+    ///
+    /// # Returns
+    ///
+    /// The updated mapping after the replacement has been made, represented as a `PyJsonValue`.
+    ///
+    /// Note that this differs from the Rust API of the same name, which by contrast returns the old value that was replaced,
+    /// and performs the replacement in-place.
+    ///
+    /// # Errors
+    ///
+    /// If the variable access failed, a `ValueError` will be raised with a message describing the error.
+    #[pyo3(signature = (value, replacement, /))]
+    pub fn replace(
+        &self,
+        mut value: PyJsonValue,
+        replacement: PyJsonValue,
+    ) -> PyResult<PyJsonValue> {
+        self.inner
+            .replace(&mut value, replacement)
+            .map_err(|e| PySosakuError::from(sosaku::EvalError::from(e)))?;
+        Ok(value)
+    }
+
     /// Access the variable specified by this `PyVarAccess` from the given variable bindings.
     ///
     /// # Arguments
